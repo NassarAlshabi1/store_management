@@ -41,6 +41,12 @@ class BackupService {
       // Expense Types
       backupData['expense_types'] = (await dbController.getExpenseTypes()).map((t) => t.toMap()).toList();
 
+      // Expenses (ObjectBox)
+      backupData['expenses'] = dbController.expenses.map((e) => e.toMap()).toList();
+
+      // Profits
+      backupData['profits'] = dbController.profits.map((p) => p.toMap()).toList();
+
       // Employees
       backupData['employees'] = (await dbController.getEmployees()).map((e) => e.toMap()).toList();
 
@@ -93,6 +99,22 @@ class BackupService {
       final data = jsonDecode(content) as Map<String, dynamic>;
 
       final appDocsDir = await getApplicationDocumentsDirectory();
+
+      // Profits
+      if (data['profits'] != null) {
+        dbController.objectBox.profitsBox.removeAll();
+        for (var m in data['profits']) {
+          dbController.objectBox.profitsBox.put(Profits.fromMap(m));
+        }
+      }
+
+      // Expenses
+      if (data['expenses'] != null) {
+        dbController.objectBox.expenseBox.removeAll();
+        for (var m in data['expenses']) {
+          dbController.objectBox.expenseBox.put(Expense.fromMap(m));
+        }
+      }
 
       // Purchases
       if (data['purchases'] != null) {

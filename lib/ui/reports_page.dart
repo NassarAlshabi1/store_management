@@ -6,7 +6,7 @@ import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
-import 'package:flutter/services.dart' show rootBundle;
+import 'package:fl_chart/fl_chart.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:store_management/controllers/database_controller.dart';
 import 'package:store_management/controllers/settings_controller.dart';
@@ -22,110 +22,36 @@ class ReportsPage extends StatefulWidget {
 }
 
 class _ReportsPageState extends State<ReportsPage> with SingleTickerProviderStateMixin {
-  final DatabaseController databaseController = Get.find<DatabaseController>();
-  final SettingsController settingsController = Get.find<SettingsController>();
-  
   late TabController _tabController;
-  DateTime startDate = DateTime(DateTime.now().year, DateTime.now().month, 1);
-  DateTime endDate = DateTime.now();
-  bool isLoading = false;
+  final DatabaseController dbController = Get.find();
+  final SettingsController settingsController = Get.find();
 
-  // Report Data
-  List<Purchase> purchases = [];
-  List<Salary> salaries = [];
-  List<Expense> expenses = [];
-  double totalSales = 0;
-  double totalPurchases = 0;
-  double totalSalaries = 0;
-  double totalExpenses = 0;
-  double netProfit = 0;
+  final RxString _period = 'Month'.obs;
 
-  final NumberFormat currencyFormat = NumberFormat.currency(
-    locale: 'ar_AE',
-    symbol: 'AED ',
-    decimalDigits: 2,
-  );
+  late DateTime _startDate;
+  late DateTime _endDate;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
-    loadAllData();
+    _tabController = TabController(length: 3, vsync: this);
+    _updateDateRange();
+    ever(_period, (_) => _updateDateRange());
   }
 
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
-  }
-
-  Future<void> loadAllData() async {
-    setState(() => isLoading = true);
-    
-    try {
-      // Load purchases
-      purchases = await databaseController.getPurchases(
-        startDate: startDate,
-        endDate: endDate,
-      );
-      totalPurchases = purchases.fold(0, (sum, p) => sum + p.totalAmount);
-
-      // Load salaries
-      salaries = await databaseController.getSalariesByMonth(startDate);
-      // Filter by date range
-      salaries = salaries.where((s) => 
-        s.month.isAfter(startDate.subtract(const Duration(days: 1))) &&
-        s.month.isBefore(endDate.add(const Duration(days: 1)))
-      ).toList();
-      totalSalaries = salaries.fold(0, (sum, s) => sum + s.totalSalary);
-
-      // Load expenses
-      expenses = databaseController.getFilteriedExpenses(startDate);
-      // Filter by end date
-      expenses = expenses.where((e) => 
-        e.date.isBefore(endDate.add(const Duration(days: 1)))
-      ).toList();
-      totalExpenses = expenses.fold(0, (sum, e) => sum + e.amount);
-
-      // Get sales from existing controller
-      totalSales = databaseController.getSales(startDate, endDate);
-
-      // Calculate net profit
-      netProfit = totalSales - totalPurchases - totalExpenses - totalSalaries;
-
-      setState(() => isLoading = false);
-    } catch (e) {
-      setState(() => isLoading = false);
-      Get.snackbar('خطأ'.tr, 'فشل تحميل التقارير'.tr);
+  void _updateDateRange() {
+    DateTime now = DateTime.now();
+    _endDate = now.add(const Duration(days: 1));
+    if (_period.value == 'Week') {
+      _startDate = now.subtract(const Duration(days: 6));
+      _startDate = DateTime(_startDate.year, _startDate.month, _startDate.day);
+    } else if (_period.value == 'Month') {
+      _startDate = now.subtract(const Duration(days: 29));
+      _startDate = DateTime(_startDate.year, _startDate.month, _startDate.day);
+    } else {
+      _startDate = DateTime(now.year, 1, 1);
     }
-  }
-
-  void _selectDateRange() async {
-    final pickedStart = await showDatePicker(
-      context: context,
-      initialDate: startDate,
-      firstDate: DateTime(2020),
-      lastDate: DateTime.now(),
-      helpText: 'اختر تاريخ البداية'.tr,
-    );
-
-    if (pickedStart != null) {
-      final pickedEnd = await showDatePicker(
-        context: context,
-        initialDate: endDate,
-        firstDate: pickedStart,
-        lastDate: DateTime.now(),
-        helpText: 'اختر تاريخ النهاية'.tr,
-      );
-
-      if (pickedEnd != null) {
-        setState(() {
-          startDate = pickedStart;
-          endDate = pickedEnd;
-        });
-        loadAllData();
-      }
-    }
+    setState(() {});
   }
 
   @override
@@ -135,229 +61,114 @@ class _ReportsPageState extends State<ReportsPage> with SingleTickerProviderStat
         title: Text('التقارير'.tr),
         bottom: TabBar(
           controller: _tabController,
-          isScrollable: true,
           tabs: [
-            Tab(icon: const Icon(Icons.dashboard), text: 'الملخص'.tr),
-            Tab(icon: const Icon(Icons.shopping_cart), text: 'المشتريات'.tr),
-            Tab(icon: const Icon(Icons.payments), text: 'الرواتب'.tr),
-            Tab(icon: const Icon(Icons.receipt_long), text: 'المصروفات'.tr),
+            Tab(icon: Icon(Icons.shopping_cart), text: 'المشتريات'.tr),
+            Tab(icon: Icon(Icons.receipt_long), text: 'المصروفات'.tr),
+            Tab(icon: Icon(Icons.payments), text: 'الرواتب'.tr),
           ],
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.date_range),
-            onPressed: _selectDateRange,
-            tooltip: 'اختيار الفترة'.tr,
-          ),
-          IconButton(
-            icon: const Icon(Icons.picture_as_pdf),
+            icon: Icon(Icons.picture_as_pdf),
             onPressed: _generatePDF,
-            tooltip: 'تصدير PDF'.tr,
           ),
-          IconButton(
-            icon: const Icon(Icons.share),
-            onPressed: _shareReport,
-            tooltip: 'مشاركة'.tr,
-          ),
+          Obx(() => _periodToggle()),
         ],
       ),
-      body: isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : TabBarView(
-              controller: _tabController,
-              children: [
-                _buildSummaryTab(),
-                _buildPurchasesTab(),
-                _buildSalariesTab(),
-                _buildExpensesTab(),
-              ],
-            ),
-    );
-  }
-
-  Widget _buildSummaryTab() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      body: TabBarView(
+        controller: _tabController,
         children: [
-          // Date Range Header
-          Card(
-            color: Colors.teal.shade50,
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  const Icon(Icons.date_range, color: Colors.teal),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'الفترة'.tr,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey,
-                          ),
-                        ),
-                        Text(
-                          '${DateFormat('yyyy-MM-dd').format(startDate)} - ${DateFormat('yyyy-MM-dd').format(endDate)}',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // Summary Cards
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              _buildSummaryCard(
-                'إجمالي المبيعات'.tr,
-                totalSales,
-                Colors.teal,
-                Icons.trending_up,
-              ),
-              _buildSummaryCard(
-                'إجمالي المشتريات'.tr,
-                totalPurchases,
-                Colors.blue,
-                Icons.shopping_cart,
-              ),
-              _buildSummaryCard(
-                'إجمالي الرواتب'.tr,
-                totalSalaries,
-                Colors.orange,
-                Icons.people,
-              ),
-              _buildSummaryCard(
-                'إجمالي المصروفات'.tr,
-                totalExpenses,
-                Colors.red,
-                Icons.receipt_long,
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-
-          // Net Profit Card
-          Card(
-            color: netProfit >= 0 ? Colors.green.shade50 : Colors.red.shade50,
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        netProfit >= 0 ? Icons.trending_up : Icons.trending_down,
-                        color: netProfit >= 0 ? Colors.green : Colors.red,
-                        size: 32,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'صافي الربح'.tr,
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: netProfit >= 0 ? Colors.green.shade700 : Colors.red.shade700,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    currencyFormat.format(netProfit),
-                    style: TextStyle(
-                      fontSize: 32,
-                      fontWeight: FontWeight.bold,
-                      color: netProfit >= 0 ? Colors.green.shade700 : Colors.red.shade700,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 24),
-
-          // Breakdown Table
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'تفصيل الحساب'.tr,
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  _buildTableRow('المبيعات'.tr, totalSales, Colors.teal),
-                  const Divider(),
-                  _buildTableRow('المشتريات'.tr, -totalPurchases, Colors.blue),
-                  _buildTableRow('الرواتب'.tr, -totalSalaries, Colors.orange),
-                  _buildTableRow('المصروفات'.tr, -totalExpenses, Colors.red),
-                  const Divider(thickness: 2),
-                  _buildTableRow('صافي الربح'.tr, netProfit, 
-                    netProfit >= 0 ? Colors.green : Colors.red, isBold: true),
-                ],
-              ),
-            ),
-          ),
+          _buildPurchasesReport(),
+          _buildExpensesReport(),
+          _buildSalariesReport(),
         ],
       ),
     );
   }
 
-  Widget _buildSummaryCard(String title, double value, Color color, IconData icon) {
-    return SizedBox(
-      width: MediaQuery.of(context).size.width / 2 - 22,
-      child: Card(
+  Widget _periodToggle() {
+    return Container(
+      height: 32,
+      margin: EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: Colors.grey.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _toggleChip('Week'.tr, _period.value == 'Week'),
+          _toggleChip('Month'.tr, _period.value == 'Month'),
+          _toggleChip('Year'.tr, _period.value == 'Year'),
+        ],
+      ),
+    );
+  }
+
+  Widget _toggleChip(String label, bool isActive) {
+    return GestureDetector(
+      onTap: () => _period.value = label == 'Week' ? 'Week' : label == 'Month' ? 'Month' : 'Year',
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        decoration: BoxDecoration(
+          color: isActive ? Colors.blue : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isActive ? Colors.white : Colors.grey[600],
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPurchasesReport() {
+    return RefreshIndicator(
+      onRefresh: () async => setState(() {}),
+      child: SingleChildScrollView(
+        physics: AlwaysScrollableScrollPhysics(),
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  Icon(icon, color: color, size: 24),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      title,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey,
+              Text('${'المشتريات'.tr} ($_startDate - $_endDate)', style: Theme.of(context).textTheme.titleLarge),
+              SizedBox(height: 16),
+              FutureBuilder<double>(
+                future: dbController.getPurchasesTotal(_startDate, _endDate),
+                builder: (context, snapshot) {
+                  if (!snapshot.hasData) return CircularProgressIndicator();
+                  return Card(
+                    child: Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('الإجمالي'.tr, style: TextStyle(fontSize: 16)),
+                          Text(
+                            settingsController.currencyFormatter(snapshot.data!),
+                            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                          ),
+                        ],
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                     ),
-                  ),
-                ],
+                  );
+                },
               ),
-              const SizedBox(height: 8),
-              Text(
-                currencyFormat.format(value),
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: color,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+              SizedBox(height: 24),
+              Text('التوزيع بالفئة'.tr, style: Theme.of(context).textTheme.titleMedium),
+              SizedBox(height: 16),
+              FutureBuilder<Map<String, double>>(
+                future: dbController.getPurchasesByCategory(_startDate, _endDate),
+                builder: (context, snapshot) {
+                  if (!snapshot.hasData) return CircularProgressIndicator();
+                  final data = snapshot.data!;
+                  if (data.isEmpty) return Text('لا بيانات'.tr);
+                  return _buildPieChart(data.entries.toList(), Colors.indigo);
+                },
               ),
             ],
           ),
@@ -366,422 +177,157 @@ class _ReportsPageState extends State<ReportsPage> with SingleTickerProviderStat
     );
   }
 
-  Widget _buildTableRow(String label, double value, Color color, {bool isBold = false}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            label,
-            style: TextStyle(
-              fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
-              fontSize: isBold ? 16 : 14,
-            ),
+  Widget _buildExpensesReport() {
+    return RefreshIndicator(
+      onRefresh: () async => setState(() {}),
+      child: SingleChildScrollView(
+        physics: AlwaysScrollableScrollPhysics(),
+        child: Padding(
+          padding: EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('${'المصروفات'.tr} ($_startDate - $_endDate)', style: Theme.of(context).textTheme.titleLarge),
+              SizedBox(height: 16),
+              Obx(() => Card(
+                child: Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('الإجمالي'.tr, style: TextStyle(fontSize: 16)),
+                      Text(
+                        settingsController.currencyFormatter(dbController.getExpenses(_startDate, _endDate)),
+                        style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                ),
+              )),
+              SizedBox(height: 24),
+              Text('التوزيع'.tr, style: Theme.of(context).textTheme.titleMedium),
+              SizedBox(height: 16),
+              // Placeholder pie for expenses (keyword based)
+              _buildExpensesPie(),
+            ],
           ),
-          Text(
-            currencyFormat.format(value),
-            style: TextStyle(
-              fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
-              fontSize: isBold ? 16 : 14,
-              color: isBold ? color : null,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
 
-  Widget _buildPurchasesTab() {
-    return Column(
-      children: [
-        // Total Header
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(16),
-          color: Colors.blue.shade50,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+  Widget _buildExpensesPie() {
+    // Simple keyword-based grouping
+    Map<String, double> data = {};
+    for (var e in dbController.expenses.where((e) => e.date.isAfter(_startDate) && e.date.isBefore(_endDate))) {
+      String cat = 'أخرى'.tr;
+      final desc = e.description.toLowerCase();
+      if (desc.contains('كهرباء')) cat = 'كهرباء'.tr;
+      else if (desc.contains('إيجار') || desc.contains('rent')) cat = 'إيجار'.tr;
+      else if (desc.contains('وقود') || desc.contains('petrol')) cat = 'وقود'.tr;
+      else if (desc.contains('صيانة') || desc.contains('maintenance')) cat = 'صيانة'.tr;
+      data[cat] = (data[cat] ?? 0) + e.amount;
+    }
+    return _buildPieChart(data.entries.toList(), Colors.orange);
+  }
+
+  Widget _buildSalariesReport() {
+    return RefreshIndicator(
+      onRefresh: () async => setState(() {}),
+      child: SingleChildScrollView(
+        physics: AlwaysScrollableScrollPhysics(),
+        child: Padding(
+          padding: EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(Icons.shopping_cart, color: Colors.blue),
-              const SizedBox(width: 8),
-              Text(
-                '${'إجمالي المشتريات:'.tr} ${currencyFormat.format(totalPurchases)}',
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
-                  color: Colors.blue,
-                ),
+              Text('${'الرواتب'.tr} ($_startDate - $_endDate)', style: Theme.of(context).textTheme.titleLarge),
+              SizedBox(height: 16),
+              FutureBuilder<double>(
+                future: dbController.getSalariesTotal(_startDate, _endDate),
+                builder: (context, snapshot) {
+                  if (!snapshot.hasData) return CircularProgressIndicator();
+                  return Card(
+                    child: Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('الإجمالي'.tr, style: TextStyle(fontSize: 16)),
+                          Text(
+                            settingsController.currencyFormatter(snapshot.data!),
+                            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+              SizedBox(height: 24),
+              Text('التوزيع بالموظف'.tr, style: Theme.of(context).textTheme.titleMedium),
+              SizedBox(height: 16),
+              FutureBuilder<Map<String, double>>(
+                future: dbController.getSalariesByEmployee(_startDate, _endDate),
+                builder: (context, snapshot) {
+                  if (!snapshot.hasData) return CircularProgressIndicator();
+                  final data = snapshot.data!;
+                  if (data.isEmpty) return Text('لا بيانات'.tr);
+                  return _buildPieChart(data.entries.toList(), Colors.purple);
+                },
               ),
             ],
           ),
         ),
-        // List
-        Expanded(
-          child: purchases.isEmpty
-              ? Center(
-                  child: Text(
-                    'لا توجد مشتريات في هذه الفترة'.tr,
-                    style: const TextStyle(color: Colors.grey),
-                  ),
-                )
-              : ListView.builder(
-                  itemCount: purchases.length,
-                  itemBuilder: (context, index) {
-                    final p = purchases[index];
-                    return Card(
-                      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                      child: ListTile(
-                        title: Text(p.supplierName, style: const TextStyle(fontWeight: FontWeight.bold)),
-                        subtitle: Text('${p.receiptNumber} - ${DateFormat('yyyy-MM-dd').format(p.purchaseDate)}'),
-                        trailing: Text(
-                          currencyFormat.format(p.totalAmount),
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: Colors.blue,
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-        ),
-      ],
+      ),
     );
   }
 
-  Widget _buildSalariesTab() {
-    return Column(
-      children: [
-        // Total Header
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(16),
-          color: Colors.orange.shade50,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.people, color: Colors.orange),
-              const SizedBox(width: 8),
-              Text(
-                '${'إجمالي الرواتب:'.tr} ${currencyFormat.format(totalSalaries)}',
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
-                  color: Colors.orange,
-                ),
-              ),
-            ],
-          ),
+  Widget _buildPieChart(List<MapEntry<String, double>> data, Color color) {
+    final total = data.fold(0.0, (sum, e) => sum + e.value);
+    final slices = data.map((e) => PieChartSectionData(
+      color: color.withOpacity(0.7 + (data.indexOf(e) * 0.1)),
+      value: e.value,
+      title: '${e.key}\n${settingsController.currencyFormatter(e.value)}',
+      radius: 60,
+      titleStyle: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+    )).toList();
+
+    return SizedBox(
+      height: 200,
+      child: PieChart(
+        PieChartData(
+          sections: slices,
+          centerSpaceRadius: 40,
+          sectionsSpace: 2,
         ),
-        // List
-        Expanded(
-          child: salaries.isEmpty
-              ? Center(
-                  child: Text(
-                    'لا توجد رواتب في هذه الفترة'.tr,
-                    style: const TextStyle(color: Colors.grey),
-                  ),
-                )
-              : ListView.builder(
-                  itemCount: salaries.length,
-                  itemBuilder: (context, index) {
-                    final s = salaries[index];
-                    return Card(
-                      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                      child: ListTile(
-                        title: Text(s.employeeName, style: const TextStyle(fontWeight: FontWeight.bold)),
-                        subtitle: Text(DateFormat('MMMM yyyy', 'ar').format(s.month)),
-                        trailing: Text(
-                          currencyFormat.format(s.totalSalary),
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: Colors.orange,
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-        ),
-      ],
+      ),
     );
   }
 
-  Widget _buildExpensesTab() {
-    return Column(
-      children: [
-        // Total Header
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(16),
-          color: Colors.red.shade50,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.receipt_long, color: Colors.red),
-              const SizedBox(width: 8),
-              Text(
-                '${'إجمالي المصروفات:'.tr} ${currencyFormat.format(totalExpenses)}',
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
-                  color: Colors.red,
-                ),
-              ),
-            ],
-          ),
-        ),
-        // List
-        Expanded(
-          child: expenses.isEmpty
-              ? Center(
-                  child: Text(
-                    'لا توجد مصروفات في هذه الفترة'.tr,
-                    style: const TextStyle(color: Colors.grey),
-                  ),
-                )
-              : ListView.builder(
-                  itemCount: expenses.length,
-                  itemBuilder: (context, index) {
-                    final e = expenses[index];
-                    return Card(
-                      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                      child: ListTile(
-                        title: Text(e.description, style: const TextStyle(fontWeight: FontWeight.bold)),
-                        subtitle: Text(DateFormat('yyyy-MM-dd').format(e.date)),
-                        trailing: Text(
-                          currencyFormat.format(e.amount),
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: Colors.red,
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-        ),
-      ],
-    );
-  }
-
-  Future<void> _generatePDF() async {
+  void _generatePDF() async {
     final pdf = pw.Document();
-
-    final fontDataRegular = await rootBundle.load('assets/fonts/Cairo-Regular.ttf');
-    final fontDataBold = await rootBundle.load('assets/fonts/Cairo-Bold.ttf');
-    final fontDataLight = await rootBundle.load('assets/fonts/Cairo-Light.ttf');
-
-    final baseFont = pw.Font.ttf(fontDataRegular);
-    final boldFont = pw.Font.ttf(fontDataBold);
-    final fallbackFont = pw.Font.ttf(fontDataLight);
+    final localeCode = Get.locale!.languageCode;
+    final currencyFormat = NumberFormat.currency(locale: localeCode, symbol: settingsController.currencySymbol.value ?? '');
+    final dateFormat = DateFormat('yyyy-MM-dd', localeCode);
 
     pdf.addPage(
       pw.Page(
-        pageFormat: PdfPageFormat.a4,
-        theme: pw.ThemeData(
-          defaultTextStyle: pw.TextStyle(
-            font: baseFont,
-            fontBold: boldFont,
-            fontFallback: [fallbackFont],
-          ),
+        build: (pw.Context context) => pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Text('التقارير المالية'.tr, style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold)),
+            pw.SizedBox(height: 20),
+            pw.Text('${'الفترة'.tr}: ${dateFormat.format(_startDate)} - ${dateFormat.format(_endDate)}'),
+            pw.SizedBox(height: 20),
+            pw.Text('المشتريات: ${currencyFormat.format(await dbController.getPurchasesTotal(_startDate, _endDate))}'),
+            pw.Text('المصروفات: ${currencyFormat.format(dbController.getExpenses(_startDate, _endDate))}'),
+            pw.Text('الرواتب: ${currencyFormat.format(await dbController.getSalariesTotal(_startDate, _endDate))}'),
+          ],
         ),
-        build: (pw.Context context) {
-          final localeCode = Get.locale?.languageCode == 'ar' ? 'ar' : 'en';
-          final isRtl = localeCode == 'ar';
-          final dateFormat = DateFormat('yyyy-MM-dd', localeCode);
-          final monthFormat = DateFormat('MMMM yyyy', localeCode);
-          final dateTimeFormat = DateFormat('yyyy-MM-dd HH:mm', localeCode);
-          final appName = settingsController.appName.value ?? 'app_name'.tr;
-
-          return pw.Directionality(
-            textDirection: isRtl ? pw.TextDirection.rtl : pw.TextDirection.ltr,
-            child: pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              // Header
-              pw.Center(
-                child: pw.Column(
-                  children: [
-                    pw.Text(
-                      appName,
-                      style: pw.TextStyle(
-                        fontSize: 24,
-                        fontWeight: pw.FontWeight.bold,
-                      ),
-                    ),
-                    pw.SizedBox(height: 8),
-                    pw.Text(
-                      'تقرير مالي'.tr,
-                      style: pw.TextStyle(
-                        fontSize: 18,
-                        color: PdfColors.grey700,
-                      ),
-                    ),
-                    pw.SizedBox(height: 8),
-                    pw.Text(
-                      '${'الفترة'.tr}: ${dateFormat.format(startDate)} - ${dateFormat.format(endDate)}',
-                      style: const pw.TextStyle(fontSize: 12),
-                    ),
-                  ],
-                ),
-              ),
-              pw.SizedBox(height: 30),
-
-              // Summary
-              pw.Container(
-                padding: const pw.EdgeInsets.all(12),
-                decoration: pw.BoxDecoration(
-                  border: pw.Border.all(color: PdfColors.grey300),
-                  borderRadius: pw.BorderRadius.circular(8),
-                ),
-                child: pw.Column(
-                  children: [
-                    _buildPDFRow('المبيعات'.tr, totalSales),
-                    _buildPDFRow('المشتريات'.tr, -totalPurchases),
-                    _buildPDFRow('الرواتب'.tr, -totalSalaries),
-                    _buildPDFRow('المصروفات'.tr, -totalExpenses),
-                    pw.Divider(thickness: 2),
-                    _buildPDFRow(
-                      'صافي الربح'.tr,
-                      netProfit,
-                      isBold: true,
-                      color: netProfit >= 0 ? PdfColors.green : PdfColors.red,
-                    ),
-                  ],
-                ),
-              ),
-              pw.SizedBox(height: 20),
-
-              // Purchases Details
-              if (purchases.isNotEmpty) ...[
-                pw.Text(
-                  'تفاصيل المشتريات'.tr,
-                  style: pw.TextStyle(
-                    fontSize: 16,
-                    fontWeight: pw.FontWeight.bold,
-                  ),
-                ),
-                pw.SizedBox(height: 10),
-                pw.Table.fromTextArray(
-                  headers: ['المورد'.tr, 'رقم الفاتورة'.tr, 'التاريخ'.tr, 'المبلغ'.tr],
-                  data: purchases.map((p) => [
-                    p.supplierName,
-                    p.receiptNumber,
-                    dateFormat.format(p.purchaseDate),
-                    currencyFormat.format(p.totalAmount),
-                  ]).toList(),
-                ),
-                pw.SizedBox(height: 20),
-              ],
-
-              // Salaries Details
-              if (salaries.isNotEmpty) ...[
-                pw.Text(
-                  'تفاصيل الرواتب'.tr,
-                  style: pw.TextStyle(
-                    fontSize: 16,
-                    fontWeight: pw.FontWeight.bold,
-                  ),
-                ),
-                pw.SizedBox(height: 10),
-                pw.Table.fromTextArray(
-                  headers: ['الموظف'.tr, 'الشهر'.tr, 'الراتب الأساسي'.tr, 'الإجمالي'.tr],
-                  data: salaries.map((s) => [
-                    s.employeeName,
-                    monthFormat.format(s.month),
-                    currencyFormat.format(s.baseSalary),
-                    currencyFormat.format(s.totalSalary),
-                  ]).toList(),
-                ),
-                pw.SizedBox(height: 20),
-              ],
-
-              // Expenses Details
-              if (expenses.isNotEmpty) ...[
-                pw.Text(
-                  'تفاصيل المصروفات'.tr,
-                  style: pw.TextStyle(
-                    fontSize: 16,
-                    fontWeight: pw.FontWeight.bold,
-                  ),
-                ),
-                pw.SizedBox(height: 10),
-                pw.Table.fromTextArray(
-                  headers: ['البيان'.tr, 'التاريخ'.tr, 'المبلغ'.tr],
-                  data: expenses.map((e) => [
-                    e.description,
-                    dateFormat.format(e.date),
-                    currencyFormat.format(e.amount),
-                  ]).toList(),
-                ),
-              ],
-
-              // Footer
-              pw.Spacer(),
-              pw.Center(
-                child: pw.Text(
-                  '${'تم إنشاء هذا التقرير في'.tr} ${dateTimeFormat.format(DateTime.now())}',
-                  style: const pw.TextStyle(
-                    fontSize: 10,
-                    color: PdfColors.grey,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-        },
       ),
     );
 
-    await Printing.layoutPdf(
-      onLayout: (PdfPageFormat format) async => pdf.save(),
-    );
-  }
-
-  pw.Widget _buildPDFRow(String label, double value, {bool isBold = false, PdfColor? color}) {
-    return pw.Padding(
-      padding: const pw.EdgeInsets.symmetric(vertical: 4),
-      child: pw.Row(
-        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-        children: [
-          pw.Text(
-            label,
-            style: pw.TextStyle(
-              fontWeight: isBold ? pw.FontWeight.bold : pw.FontWeight.normal,
-            ),
-          ),
-          pw.Text(
-            currencyFormat.format(value),
-            style: pw.TextStyle(
-              fontWeight: isBold ? pw.FontWeight.bold : pw.FontWeight.normal,
-              color: color,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _shareReport() {
-    final StringBuffer report = StringBuffer();
-    
-    final localeCode = Get.locale?.languageCode == 'ar' ? 'ar' : 'en';
-    final dateFormat = DateFormat('yyyy-MM-dd', localeCode);
-    final appName = settingsController.appName.value ?? 'app_name'.tr;
-
-    report.writeln('📊 ${'تقرير مالي'.tr} - $appName');
-    report.writeln('📅 ${'الفترة'.tr}: ${dateFormat.format(startDate)} - ${dateFormat.format(endDate)}');
-    report.writeln('');
-    report.writeln('📈 ${'المبيعات'.tr}: ${currencyFormat.format(totalSales)}');
-    report.writeln('🛒 ${'المشتريات'.tr}: ${currencyFormat.format(totalPurchases)}');
-    report.writeln('👥 ${'الرواتب'.tr}: ${currencyFormat.format(totalSalaries)}');
-    report.writeln('💸 ${'المصروفات'.tr}: ${currencyFormat.format(totalExpenses)}');
-    report.writeln('━' * 20);
-    report.writeln('${netProfit >= 0 ? "✅" : "❌"} ${'صافي الربح'.tr}: ${currencyFormat.format(netProfit)}');
-
-    Share.share(report.toString(), subject: '${'تقرير مالي'.tr} - $appName');
+    await Printing.layoutPdf(onLayout: (PdfPageFormat format) async => pdf.save());
   }
 }

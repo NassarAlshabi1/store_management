@@ -618,6 +618,27 @@ class DatabaseController extends GetxController {
     return purchases.fold(0.0, (sum, p) => sum + p.totalAmount);
   }
 
+  Future<Map<String, double>> getPurchasesByCategory(DateTime start, DateTime end) async {
+    final purchases = await getPurchases(startDate: start, endDate: end);
+    Map<String, double> catTotals = {};
+    for (var p in purchases) {
+      for (var item in p.items) {
+        final catId = item.categoryId ?? 'غير مصنف';
+        catTotals[catId] = (catTotals[catId] ?? 0) + item.total;
+      }
+    }
+    return catTotals;
+  }
+
+  Future<Map<String, double>> getSalariesByEmployee(DateTime start, DateTime end) async {
+    final salaries = await getSalaries();
+    Map<String, double> empTotals = {};
+    for (var s in salaries.where((s) => s.month.isAfter(start.subtract(const Duration(days: 1))) && s.month.isBefore(end))) {
+      empTotals[s.employeeName] = (empTotals[s.employeeName] ?? 0) + s.totalSalary;
+    }
+    return empTotals;
+  }
+
   Future<double> getSalariesTotal(DateTime start, DateTime end) async {
     final salaries = await _getAllSalaries();
     return salaries

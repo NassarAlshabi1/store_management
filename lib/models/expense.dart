@@ -18,6 +18,26 @@ class Expense {
     List s = date.toLocal().toIso8601String().split('T');
     return '${s[0].substring(0, 10)}, ${s[1].substring(0, 5)}';
   }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'description': description,
+      'amount': amount,
+      'date': date.toIso8601String(),
+      'profitId': profit.targetId,
+    };
+  }
+
+  static Expense fromMap(Map<String, dynamic> map) {
+    final expense = Expense(
+      description: map['description'] ?? '',
+      date: DateTime.parse(map['date']),
+      amount: (map['amount'] ?? 0).toDouble(),
+    );
+    expense.profit.targetId = map['profitId'] ?? 0;
+    return expense;
+  }
 }
 
 class ExpenseType {

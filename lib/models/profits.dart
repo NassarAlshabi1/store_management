@@ -39,4 +39,20 @@ class Profits {
 
     return gross - discount;
   }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'date': date,
+      'invoiceId': invoice.targetId,
+    };
+  }
+
+  static Profits fromMap(Map<String, dynamic> map) {
+    final profit = Profits();
+    profit.id = map['id'] ?? 0;
+    profit.date = map['date'] ?? 0;
+    profit.invoice.targetId = map['invoiceId'] ?? 0;
+    return profit;
+  }
 }
