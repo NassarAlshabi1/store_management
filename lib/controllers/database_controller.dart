@@ -694,7 +694,9 @@ class DatabaseController extends GetxController {
     return File('${dir.path}/purchases.json');
   }
 
-  Future<void> _savePurchases(List<Purchase> purchases) async {
+  Future<void> savePurchases(List<Purchase> purchases) async {
+  await _savePurchases(purchases);
+}
     final file = await _getPurchasesFile();
     final data = purchases.map((p) => p.toMap()).toList();
     await file.writeAsString(jsonEncode(data));
@@ -747,7 +749,9 @@ class DatabaseController extends GetxController {
     return File('${dir.path}/purchase_categories.json');
   }
 
-  Future<void> _savePurchaseCategories(List<PurchaseCategory> categories) async {
+  Future<void> savePurchaseCategories(List<PurchaseCategory> categories) async {
+  await _savePurchaseCategories(categories);
+}
     final file = await _getPurchaseCategoriesFile();
     final data = categories.map((c) => c.toMap()).toList();
     await file.writeAsString(jsonEncode(data));
@@ -799,7 +803,9 @@ class DatabaseController extends GetxController {
     return File('${dir.path}/expense_types.json');
   }
 
-  Future<void> _saveExpenseTypes(List<ExpenseType> types) async {
+  Future<void> saveExpenseTypes(List<ExpenseType> types) async {
+  await _saveExpenseTypes(types);
+}
     final file = await _getExpenseTypesFile();
     final data = types.map((t) => t.toMap()).toList();
     await file.writeAsString(jsonEncode(data));
@@ -843,7 +849,9 @@ class DatabaseController extends GetxController {
     return File('${dir.path}/employees.json');
   }
 
-  Future<void> _saveEmployees(List<Employee> employees) async {
+  Future<void> saveEmployees(List<Employee> employees) async {
+  await _saveEmployees(employees);
+}
     final file = await _getEmployeesFile();
     final data = employees.map((e) => e.toMap()).toList();
     await file.writeAsString(jsonEncode(data));
@@ -900,7 +908,9 @@ class DatabaseController extends GetxController {
     return File('${dir.path}/salaries.json');
   }
 
-  Future<void> _saveSalaries(List<Salary> salaries) async {
+  Future<void> saveSalaries(List<Salary> salaries) async {
+  await _saveSalaries(salaries);
+}
     final file = await _getSalariesFile();
     final data = salaries.map((s) => s.toMap()).toList();
     await file.writeAsString(jsonEncode(data));
@@ -1213,7 +1223,9 @@ class DatabaseController extends GetxController {
     return File('${dir.path}/urgent_orders.json');
   }
 
-  Future<void> _saveUrgentOrders(List<UrgentOrder> orders) async {
+  Future<void> saveUrgentOrders(List<UrgentOrder> orders) async {
+  await _saveUrgentOrders(orders);
+}
     final file = await _getUrgentOrdersFile();
     final data = orders.map((o) => o.toMap()).toList();
     await file.writeAsString(jsonEncode(data));
