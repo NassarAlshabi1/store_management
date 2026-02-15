@@ -906,6 +906,40 @@ class DatabaseController extends GetxController {
     await file.writeAsString(jsonEncode(data));
   }
 
+  // ==================== PRINT QUOTES ====================
+
+  Future<List<PrintQuote>> getPrintQuotes() async {
+    final file = await _getPrintQuotesFile();
+    if (!await file.exists()) return [];
+    final content = await file.readAsString();
+    final List<dynamic> data = jsonDecode(content);
+    return data.map((m) => PrintQuote.fromMap(m)).toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+  }
+
+  Future<void> addPrintQuote(PrintQuote quote) async {
+    final quotes = await getPrintQuotes();
+    quotes.add(quote);
+    await _savePrintQuotes(quotes);
+  }
+
+  Future<void> deletePrintQuote(String id) async {
+    final quotes = await getPrintQuotes();
+    quotes.removeWhere((q) => q.id == id);
+    await _savePrintQuotes(quotes);
+  }
+
+  Future<File> _getPrintQuotesFile() async {
+    final dir = await getApplicationDocumentsDirectory();
+    return File('${dir.path}/print_quotes.json');
+  }
+
+  Future<void> _savePrintQuotes(List<PrintQuote> quotes) async {
+    final file = await _getPrintQuotesFile();
+    final data = quotes.map((q) => q.toMap()).toList();
+    await file.writeAsString(jsonEncode(data));
+  }
+
   // ==================== INVENTORY - PAPER STOCK ====================
 
   Future<List<PaperStock>> getPaperStock() async {
